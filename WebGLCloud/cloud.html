@@ -1,0 +1,188 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title></title>
+    <link href="css/init.css" rel="stylesheet" />
+    <script type="text/javascript" src="js/three.js"></script>
+    <script type="text/javascript" src="js/detector.js")"></script>
+</head>
+<body>
+<script id="vs" type="x-shader/x-vertex">
+    varying vec2 vUv;
+    void main() {
+    vUv = uv;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+    }
+
+</script>
+<script id="fs" type="x-shader/x-fragment">
+    uniform sampler2D map;
+
+    uniform vec3 fogColor;
+    uniform float fogNear;
+    uniform float fogFar;
+
+    varying vec2 vUv;
+
+    void main() {
+
+    float depth = gl_FragCoord.z / gl_FragCoord.w;
+    float fogFactor = smoothstep( fogNear, fogFar, depth );
+
+    gl_FragColor = texture2D( map, vUv );
+    gl_FragColor.w *= pow( gl_FragCoord.z, 20.0 );
+    gl_FragColor = mix( gl_FragColor, vec4( fogColor, gl_FragColor.w ), fogFactor );
+
+    }
+
+</script>
+<script type="text/javascript">
+
+    if (!Detector.webgl) Detector.addGetWebGLMessage();
+
+    var container;
+    var camera, scene, renderer;
+    var mesh, geometry, material;
+
+    var mouseX = 0, mouseY = 0;
+    var start_time = Date.now();
+
+    var windowHalfX = window.innerWidth / 2;
+    var windowHalfY = window.innerHeight / 2;
+
+    init();
+
+    function init() {
+        container = document.createElement('div');
+        document.body.appendChild(container);
+
+        //透视相机   THREE.PerspectiveCamera(fov, aspect, near, far)
+        //fov是视景体竖直方向上的张角（是角度制而非弧度制）30=> + -15
+        //aspect是照相机水平方向和竖直方向长度的比值，通常设为Canvas的横纵比例
+        //near、far分别是照相机到视景体最近、最远的距离，均为正值，且far应大于near
+        camera = new THREE.PerspectiveCamera(30, window.innerWidth / window.innerHeight, 1, 3000);
+        //起始视点
+        camera.position.z = 6000;
+
+        //构建一个场景
+        scene = new THREE.Scene();
+
+        //几何体
+        geometry = new THREE.Geometry();
+
+        //加载纹理
+        //第一个参数是一个相对路径，表示与您的网页之间的相对路径。
+        //第二个参数为null，表示时候要传入一个纹理坐标参数，来覆盖前面在geometry中的参数。
+        //第三个表示一个回调函数，表示成功加载纹理后需要执行的函数，参数t是传入的texture。
+        //最后，这个函数的返回值是加载的纹理
+        var texture = THREE.ImageUtils.loadTexture('images/cloud.png', null, animate);
+
+        //THREE.LinearMipMapLinearFilter在mip层之间执行线性插补，并执行线性过滤
+        //一个纹理需要被放大的时候
+        texture.magFilter = THREE.LinearMipMapLinearFilter;
+        texture.minFilter = THREE.LinearMipMapLinearFilter;
+
+        //雾效,远端的云雾
+        var fog = new THREE.Fog(0x4584b4, -100, 3000);
+
+        //从效率上来说最好用sharedMaterial，它是共享材质，无论如何操作材质的属性（如更换颜色或者更换shader），内存中只会占用一份。
+        //但是如果要是用material的话，每次更换属性的时候Unity就会自动new一份新的material作用于它。
+        //直到Application.LoadLevel() 或者Resources.UnloadUnusedAssets();的时候才会施放内存。
+        //所以material就有可能会造成内存泄漏，那么我们干脆就不要使用它。
+        //共享材质
+        material = new THREE.ShaderMaterial({
+            uniforms: {
+                "map": { type: "t", value: texture },
+                "fogColor": { type: "c", value: fog.color },
+                "fogNear": { type: "f", value: fog.near },
+                "fogFar": { type: "f", value: fog.far }
+            },
+            vertexShader: document.getElementById('vs').textContent,
+            fragmentShader: document.getElementById('fs').textContent,
+            depthWrite: false,
+            depthTest: false,
+            transparent: true
+
+        });
+        //PlaneGeometry  画一个平面，高64宽64
+        var plane = new THREE.Mesh(new THREE.PlaneGeometry(64, 64));
+
+        //8000片云
+        for (var i = 0; i < 8000; i++) {
+            plane.position.x = Math.random() * 1000 - 500;
+            plane.position.y = -Math.random() * Math.random() * 200 - 15;
+            plane.position.z = i;
+            plane.rotation.z = Math.random() * Math.PI;
+            plane.scale.x = plane.scale.y = Math.random() * Math.random() * 1.5 + 0.5;
+
+            ///merge方法将两个几何体对象或者Object3D里面的几何体对象合并,(使用对象的变换)将几何体的顶点,面,UV分别合并. 
+            ///NOTE: merge方法在新版本中已经放到了Geomet对象下面,这里保留为了向后兼容. 
+            ///<summary>merge</summary>  
+            ///<param name ="geometry">几何体对象.</param>  
+            ///<param name ="plane">要被合并的几何体.</param>  
+            ///返回合并后的几何体对象
+            THREE.GeometryUtils.merge(geometry, plane);
+        }
+        //直接将纹理甩给Mesh，同时也别忘了Mesh也需要geometry
+        //啮合
+        mesh = new THREE.Mesh(geometry, material);
+        //最后的最后，将这个mesh加入场景中
+        scene.add(mesh);
+
+        //最后一片云
+        mesh = new THREE.Mesh(geometry, material);
+        mesh.position.z = -8000;
+        scene.add(mesh);
+
+        //渲染器
+        renderer = new THREE.WebGLRenderer({
+            antialias: false,      //是否开启反锯齿
+            precision: "highp",    //着色精度选择  highp/mediump/lowp
+            alpha: true,           //是否可以设置背景色透明  
+            //premultipliedAlpha: false,
+            //stencil: false,
+            preserveDrawingBuffer: true, //是否保存绘图缓冲，若设为true，则可以提取canvas绘图的缓冲。
+            //maxLights: 1           //maxLights:最大灯光数  
+        });
+        //背景透明
+        renderer.setClearColor(0xFFFFFF, 0);
+        //渲染区域，全屏
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        //div渲染完毕加入Dom
+        container.appendChild(renderer.domElement);
+
+        document.addEventListener('mousemove', onDocumentMouseMove, false);
+        window.addEventListener('resize', onWindowResize, false);
+
+    }
+
+    function onDocumentMouseMove(event) {
+        mouseX = (event.clientX - windowHalfX) * 0.25;
+        mouseY = (event.clientY - windowHalfY) * 0.15;
+    }
+
+    function onWindowResize(event) {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        //更新相机的投影矩阵
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+
+    //渲染循环
+    function animate() {
+        requestAnimationFrame(animate);
+        //透视相机视点移动
+        position = ((Date.now() - start_time) * 0.03) % 8000;
+        camera.position.x += (mouseX - camera.position.x) * 0.01;
+        camera.position.y += (-mouseY - camera.position.y) * 0.01;
+        camera.position.z = -position + 8000;
+        //渲染
+        renderer.render(scene, camera);
+    }
+</script>
+
+</body>
+</html>
