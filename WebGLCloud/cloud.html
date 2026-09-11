@@ -78,11 +78,11 @@
         //第二个参数为null，表示时候要传入一个纹理坐标参数，来覆盖前面在geometry中的参数。
         //第三个表示一个回调函数，表示成功加载纹理后需要执行的函数，参数t是传入的texture。
         //最后，这个函数的返回值是加载的纹理
-        var texture = THREE.ImageUtils.loadTexture('images/cloud.png', null, animate);
+        var textureLoader = new THREE.TextureLoader();
+        var texture = textureLoader.load('./images/cloud.png', animate);
 
-        //THREE.LinearMipMapLinearFilter在mip层之间执行线性插补，并执行线性过滤
-        //一个纹理需要被放大的时候
-        texture.magFilter = THREE.LinearMipMapLinearFilter;
+        //放大时使用线性过滤，缩小时在mip层之间执行线性插值。
+        texture.magFilter = THREE.LinearFilter;
         texture.minFilter = THREE.LinearMipMapLinearFilter;
 
         //雾效,远端的云雾
@@ -119,12 +119,13 @@
             plane.scale.x = plane.scale.y = Math.random() * Math.random() * 1.5 + 0.5;
 
             ///merge方法将两个几何体对象或者Object3D里面的几何体对象合并,(使用对象的变换)将几何体的顶点,面,UV分别合并. 
-            ///NOTE: merge方法在新版本中已经放到了Geomet对象下面,这里保留为了向后兼容. 
+            ///NOTE: merge方法在新版本中已经放到了Geometry对象下面.
             ///<summary>merge</summary>  
             ///<param name ="geometry">几何体对象.</param>  
             ///<param name ="plane">要被合并的几何体.</param>  
             ///返回合并后的几何体对象
-            THREE.GeometryUtils.merge(geometry, plane);
+            plane.updateMatrix();
+            geometry.merge(plane.geometry, plane.matrix);
         }
         //直接将纹理甩给Mesh，同时也别忘了Mesh也需要geometry
         //啮合
